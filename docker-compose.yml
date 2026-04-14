@@ -15,7 +15,7 @@ services:
     image: redis:7.4-alpine
     restart: unless-stopped
     ports:
-      - 127.0.0.1:6379:6379
+      - 127.0.0.1:6370:6379
     volumes:
       - redis_data:/data
     healthcheck:
@@ -32,14 +32,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # Use the full GHCR path so 'docker compose pull' works in CI
     image: ghcr.io/ivanemoje/dagster-showcase/api:latest
     restart: unless-stopped
     depends_on:
       redis:
         condition: service_healthy
     ports:
-      - 127.0.0.1:8000:8000
+      - 127.0.0.1:8080:8000
     volumes: *data-volume
     environment:
       <<: *common-env
@@ -74,7 +73,6 @@ services:
     volumes: *data-volume
     environment:
       <<: *common-env
-    # Moved schedule to /tmp to avoid [Errno 13] permission issues in the container root
     command: >
       celery -A api.app.celery_app beat
       --loglevel=info
@@ -87,7 +85,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - 127.0.0.1:5555:5555
+      - 127.0.0.1:5556:5555
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       FLOWER_PORT: 5555
@@ -99,7 +97,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - 127.0.0.1:3000:3000
+      - 127.0.0.1:3001:3000
     volumes: *data-volume
     environment:
       <<: *common-env
