@@ -74,6 +74,12 @@ curl -s http://localhost:8000/pipeline/status/abc-123 | jq .
 # → {"task_id": "...", "status": "SUCCESS", "result": {"success": true}}
 ```
 
+# View Data
+```
+# View results from
+docker exec -it dagster-pipeline-worker-1 python3 -c "import duckdb; conn = duckdb.connect('/data/pipeline.duckdb'); print(conn.execute('SHOW TABLES').fetchall()); print(conn.execute('SELECT * FROM gold_daily_summary LIMIT 5').df())"
+```
+
 ### 4. Run smoke tests
 
 ```bash
