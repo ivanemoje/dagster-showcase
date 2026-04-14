@@ -1,0 +1,6 @@
+sale_id,sale_date,product,region,quantity,unit_price
+1,2026-04-10,Laptop,AMER,2,1200.50
+2,2026-04-10,Mouse,EMEA,15,25.00
+3,2026-04-11,Keyboard,APAC,5,75.25
+4,2026-04-12,Monitor,AMER,3,350.00
+5,2026-04-13,Laptop,EMEA,1,1200.50

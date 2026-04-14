@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ivanemoje/dagster-showcase/contracts/sales_pipeline_v1.json",
+  "title": "Sales Medallion Pipeline — Data Contract v1",
+  "description": "Canonical schema contract for all layers of the sales medallion pipeline. Any producer writing to these tables and any consumer reading from them must conform to this contract.",
+  "version": "1.0.0",
+  "owner": "data-platform",
+  "updated": "2026-04-14",
+
+  "layers": {
+    "bronze_sales": {
+      "description": "Raw ingest layer. Source-faithful representation with no transformations.",
+      "sla_freshness_minutes": 60,
+      "primary_key": ["sale_id"],
+      "properties": {
+        "sale_id":    { "type": "integer", "minimum": 1, "nullable": false, "description": "Surrogate key, unique per sale event" },
+        "sale_date":  { "type": "string",  "format": "date", "nullable": false, "description": "ISO-8601 UTC date of sale" },
+        "product":    { "type": "string",  "minLength": 1, "nullable": false, "description": "Product name as received from source system" },
+        "region":     { "type": "string",  "enum": ["EMEA","APAC","AMER"], "nullable": false, "description": "Sales region — controlled vocabulary" },
+        "quantity":   { "type": "integer", "minimum": 1, "nullable": false, "description": "Units sold; bronze accepts >= 1 post-source-filter" },
+        "unit_price": { "type": "number",  "minimum": 0.01, "multipleOf": 0.01, "nullable": false, "description": "Price per unit in USD, 2dp" }
+      },
+      "required": ["sale_id","sale_date","product","region","quantity","unit_price"]
+    },
+
+    "silver_sales": {
+      "description": "Validated and enriched. Derived revenue column added; quality checks enforced.",
+      "sla_freshness_minutes": 90,
+      "primary_key": ["sale_id"],
+      "extends": "bronze_sales",
+      "additional_properties": {
+        "revenue": {
+          "type": "number",
+          "minimum": 0.01,
+          "multipleOf": 0.01,
+          "nullable": false,
+          "description": "Derived: quantity × unit_price, rounded 2dp. MUST equal quantity * unit_price ± 0.01.",
+          "derivation": "ROUND(quantity * unit_price, 2)"
+        }
+      },
+      "quality_rules": [
+        { "rule": "quantity > 0",      "action": "reject_row",   "description": "Zero/negative quantity is a source defect" },
+        { "rule": "unit_price > 0",    "action": "reject_row",   "description": "Zero/negative price is a source defect" },
+        { "rule": "revenue == ROUND(quantity * unit_price, 2)", "action": "alert", "description": "Derived column consistency check" }
+      ]
+    },
+
+    "gold_daily_summary": {
+      "description": "Aggregate daily revenue with 7-day rolling average. One row per calendar date.",
+      "sla_freshness_minutes": 120,
+      "primary_key": ["sale_date"],
+      "granularity": "day",
+      "properties": {
+        "sale_date":      { "type": "string", "format": "date", "nullable": false, "description": "Calendar date" },
+        "daily_revenue":  { "type": "number", "minimum": 0,     "nullable": false, "description": "Sum of revenue for that day" },
+        "rolling_7d_rev": { "type": "number", "minimum": 0,     "nullable": false, "description": "7-day rolling average using SQL window fn (ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)" }
+      },
+      "required": ["sale_date","daily_revenue","rolling_7d_rev"]
+    },
+
+    "gold_top_products": {
+      "description": "Product-level revenue leaderboard. One row per product.",
+      "sla_freshness_minutes": 120,
+      "primary_key": ["product"],
+      "granularity": "product",
+      "properties": {
+        "product":       { "type": "string",  "minLength": 1, "nullable": false, "description": "Product name" },
+        "total_revenue": { "type": "number",  "minimum": 0,   "nullable": false, "description": "Lifetime revenue for this product in the pipeline window" },
+        "total_units":   { "type": "integer", "minimum": 0,   "nullable": false, "description": "Total units sold" },
+        "rank":          { "type": "integer", "minimum": 1,   "nullable": false, "description": "DENSE_RANK by total_revenue DESC" }
+      },
+      "required": ["product","total_revenue","total_units","rank"]
+    }
+  },
+
+  "pipeline_guarantees": {
+    "idempotency": "All assets use DELETE+INSERT — safe to rerun any number of times",
+    "complexity":  "All SQL transforms are O(N log N) or better; no self-joins used for rolling windows",
+    "ordering":    "bronze → silver → gold_daily_summary, gold_top_products (silver is shared dependency)",
+    "caching":     "Heavy asset results are cached in Redis (TTL 300s); Celery workers handle async materialisation"
+  }
+}

@@ -1,0 +1,122 @@
+name: dagster-pipeline
+
+x-common-env: &common-env
+  REDIS_URL: redis://redis:6379/0
+  DB_PATH: /data/pipeline.duckdb
+  CACHE_TTL_SECONDS: 300
+  PYTHONPATH: /app
+
+x-data-volume: &data-volume
+  - pipeline_data:/data
+
+services:
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:6379:6379
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:8000:8000
+    volumes: *data-volume
+    environment:
+      <<: *common-env
+    command: [uvicorn, api.app:app, --host, 0.0.0.0, --port, '8000', --workers, '2']
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes: *data-volume
+    environment:
+      <<: *common-env
+    command: >
+      celery -A api.app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --queues=celery
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes: *data-volume
+    environment:
+      <<: *common-env
+    command: >
+      celery -A api.app.celery_app beat
+      --loglevel=info
+      -s /tmp/celerybeat-schedule
+
+  flower:
+    image: mher/flower:2.0
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:5555:5555
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_PORT: 5555
+
+  dagster:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes: *data-volume
+    environment:
+      <<: *common-env
+      DAGSTER_HOME: /tmp
+    command: [dagster, dev, -h, 0.0.0.0, -p, '3000', -m, dagster_pipeline]
+
+volumes:
+  pipeline_data:
+  redis_data:
