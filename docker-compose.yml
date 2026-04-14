@@ -32,8 +32,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    # Use the full GHCR path so 'docker compose pull' works in CI
+    image: ghcr.io/ivanemoje/dagster-showcase/api:latest
     restart: unless-stopped
     depends_on:
       redis:
@@ -51,11 +51,7 @@ services:
       retries: 3
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    image: ghcr.io/ivanemoje/dagster-showcase/api:latest
     restart: unless-stopped
     depends_on:
       redis:
@@ -70,11 +66,7 @@ services:
       --queues=celery
 
   beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    image: ghcr.io/ivanemoje/dagster-showcase/api:latest
     restart: unless-stopped
     depends_on:
       redis:
@@ -82,10 +74,11 @@ services:
     volumes: *data-volume
     environment:
       <<: *common-env
+    # Moved schedule to /tmp to avoid [Errno 13] permission issues in the container root
     command: >
       celery -A api.app.celery_app beat
       --loglevel=info
-      -s /tmp/celerybeat-schedule
+      --schedule=/tmp/celerybeat-schedule
 
   flower:
     image: mher/flower:2.0
@@ -100,11 +93,7 @@ services:
       FLOWER_PORT: 5555
 
   dagster:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    image: ghcr.io/${GITHUB_REPOSITORY:-your-org/dagster-pipeline}/api:latest
+    image: ghcr.io/ivanemoje/dagster-showcase/api:latest
     restart: unless-stopped
     depends_on:
       redis:

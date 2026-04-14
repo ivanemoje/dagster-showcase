@@ -10,6 +10,8 @@ env:
   PYTHON_VERSION: "3.12"
   REGISTRY: ghcr.io
   IMAGE_TAG: ghcr.io/${{ github.repository }}/api:latest
+  # Suppress Node.js 20 deprecation warnings by opting into Node.js 24
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
 
